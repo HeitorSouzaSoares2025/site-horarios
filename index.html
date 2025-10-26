@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Horários E.E.I.T.P.F — Planner</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+  .slot-card { transition: transform 0.2s; }
+  .slot-card:hover { transform: translateY(-2px); }
+  .slot-input { min-height: 2.5rem; }
+  .backdrop { background: rgba(0,0,0,0.45); }
+  .icon { width: 16px; height: 16px; display: inline-block; margin-right: 4px; }
+</style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen antialiased">
+
+<div class="max-w-5xl mx-auto p-6">
+
+  <!-- Cabeçalho -->
+  <header class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Horários E.E.I.T.P.F</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Selecione Curso + Ano para visualizar. Administrador: entrar para editar.</p>
+    </div>
+    <div class="flex gap-2 items-center">
+      <button id="toggleDark" class="px-3 py-2 bg-slate-200 dark:bg-slate-700 rounded hover:bg-slate-300 dark:hover:bg-slate-600 text-sm">🌙 / ☀️</button>
+      <button id="enterAdmBtn" class="px-3 py-2 bg-amber-500 text-black rounded hover:bg-amber-400 text-sm">Entrar como adm</button>
+      <button id="openAdminPanelBtn" class="px-3 py-2 bg-amber-200 text-amber-900 rounded hover:bg-amber-100 text-sm hidden">Painel Admin</button>
+    </div>
+  </header>
+
+  <!-- Seleção de Curso + Ano -->
+  <section class="bg-white dark:bg-slate-800 rounded-2xl shadow p-6 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+    <div>
+      <label class="block text-sm font-medium mb-1">Curso</label>
+      <select id="courseSelect" class="w-full rounded-md border px-3 py-2 bg-white dark:bg-slate-700"></select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Ano</label>
+      <select id="yearSelect" class="w-full rounded-md border px-3 py-2 bg-white dark:bg-slate-700"></select>
+    </div>
+    <div class="flex gap-2">
+      <button id="refreshBtn" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Atualizar</button>
+      <button id="exportImgBtn" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">📷 Exportar imagem</button>
+    </div>
+  </section>
+
+  <!-- Grid de Horários -->
+  <section id="slotsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" aria-live="polite"></section>
+
+  <footer class="text-center text-xs text-slate-400 dark:text-slate-500">
+    Dados salvos localmente no navegador (LocalStorage). Backup via Export/Import JSON.
+  </footer>
+</div>
+
+<!-- Login Admin -->
+<div id="loginModal" class="fixed inset-0 hidden items-center justify-center backdrop p-4 z-50">
+  <div class="bg-white dark:bg-slate-800 rounded-lg shadow-lg w-full max-w-sm p-4">
+    <h2 class="text-lg font-semibold mb-2">Login do Administrador</h2>
+    <input id="adminUser" class="w-full border rounded px-3 py-2 mb-2 bg-white dark:bg-slate-700" placeholder="Usuário">
+    <input id="adminPass" type="password" class="w-full border rounded px-3 py-2 mb-4 bg-white dark:bg-slate-700" placeholder="Senha">
+    <div class="flex justify-end gap-2">
+      <button id="cancelLogin" class="px-3 py-2 rounded border">Cancelar</button>
+      <button id="confirmLogin" class="px-3 py-2 rounded bg-amber-500 text-black">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Painel Admin -->
+<div id="adminPanel" class="fixed inset-0 hidden items-start justify-center backdrop p-6 z-50 overflow-auto">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-5xl p-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold">Painel do Administrador</h3>
+      <button id="closeAdminBtn" class="px-3 py-2 bg-red-50 border text-red-600 rounded hover:bg-red-100">Fechar</button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      <div>
+        <label class="block text-sm mb-1">Curso</label>
+        <select id="adminCourseSelect" class="w-full rounded border px-3 py-2 bg-white dark:bg-slate-700"></select>
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Ano</label>
+        <select id="adminYearSelect" class="w-full rounded border px-3 py-2 bg-white dark:bg-slate-700"></select>
+      </div>
+      <div class="flex gap-2 items-end">
+        <button id="saveAdminBtn" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Salvar</button>
+        <button id="resetAdminBtn" class="px-3 py-2 bg-red-50 border text-red-600 rounded hover:bg-red-100 text-sm">Resetar</button>
+      </div>
+    </div>
+
+    <div id="adminForm" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+  </div>
+</div>
+
+<script>
+/* ---------------- CONFIGURAÇÕES ---------------- */
+const ADMIN_USER = 'HeitorSSAdm';
+const ADMIN_PASS = '26121970';
+const STORAGE_PREFIX = 'planner9::';
+const NUM_SLOTS = 9;
+
+const INITIAL_COURSES = [
+  { id:null, name:'Informática', years:[{id:null,name:'1º Ano'},{id:null,name:'2º Ano'}]},
+  { id:null, name:'Mecânica', years:[{id:null,name:'1º Ano'},{id:null,name:'2º Ano'},{id:null,name:'3º Ano'}]},
+  { id:null, name:'Eletrotécnica', years:[{id:null,name:'1º Ano'},{id:null,name:'2º Ano'},{id:null,name:'3º Ano'}]},
+  { id:null, name:'Eletroeletrônica', years:[{id:null,name:'1º Ano'},{id:null,name:'2º Ano'},{id:null,name:'3º Ano'}]},
+];
+
+/* ---------------- ESTADO ---------------- */
+let courses = [];
+let selectedCourseId = null;
+let selectedYearId = null;
+let isAdmin = false;
+
+/* ---------------- UTIL ---------------- */
+function uid(p='id'){return p+'_'+Math.random().toString(36).slice(2,9);}
+function scheduleKey(courseId,yearId){return STORAGE_PREFIX+courseId+'::'+yearId;}
+function colorFromText(text){
+  let hash=0;for(let i=0;i<text.length;i++){hash=text.charCodeAt(i)+((hash<<5)-hash);}
+  const h=hash%360; return `hsl(${h},60%,70%)`;
+}
+
+/* ---------------- CARREGAR / SALVAR ---------------- */
+function loadCoursesMeta(){
+  const raw = localStorage.getItem(STORAGE_PREFIX+'__courses_meta');
+  if(raw){ try{ courses=JSON.parse(raw); courses.forEach(c=>{if(!c.id)c.id=uid('c');c.years.forEach(y=>{if(!y.id)y.id=uid('y');}); }); return; }catch(e){} }
+  courses = INITIAL_COURSES.map(c=>({id:uid('c'),name:c.name,years:c.years.map(y=>({id:uid('y'),name:y.name}))}));
+  localStorage.setItem(STORAGE_PREFIX+'__courses_meta',JSON.stringify(courses));
+}
+function saveCoursesMeta(){ localStorage.setItem(STORAGE_PREFIX+'__courses_meta',JSON.stringify(courses)); }
+
+/* ---------------- ELEMENTOS ---------------- */
+const courseSelect=document.getElementById('courseSelect');
+const yearSelect=document.getElementById('yearSelect');
+const slotsGrid=document.getElementById('slotsGrid');
+const refreshBtn=document.getElementById('refreshBtn');
+const enterAdmBtn=document.getElementById('enterAdmBtn');
+const openAdminPanelBtn=document.getElementById('openAdminPanelBtn');
+const loginModal=document.getElementById('loginModal');
+const adminUserInput=document.getElementById('adminUser');
+const adminPassInput=document.getElementById('adminPass');
+const cancelLogin=document.getElementById('cancelLogin');
+const confirmLogin=document.getElementById('confirmLogin');
+const adminPanel=document.getElementById('adminPanel');
+const adminCourseSelect=document.getElementById('adminCourseSelect');
+const adminYearSelect=document.getElementById('adminYearSelect');
+const adminForm=document.getElementById('adminForm');
+const saveAdminBtn=document.getElementById('saveAdminBtn');
+const resetAdminBtn=document.getElementById('resetAdminBtn');
+const closeAdminBtn=document.getElementById('closeAdminBtn');
+const exportImgBtn=document.getElementById('exportImgBtn');
+const toggleDark=document.getElementById('toggleDark');
+
+/* ---------------- RENDER ---------------- */
+function renderCourseSelect(){
+  courseSelect.innerHTML=''; 
+  courses.forEach(c=>{const o=document.createElement('option'); o.value=c.id;o.textContent=c.name;courseSelect.appendChild(o);});
+  if(!selectedCourseId && courses.length) selectedCourseId=courses[0].id;
+  if(selectedCourseId) courseSelect.value=selectedCourseId;
+  renderYearSelect();
+}
+function renderYearSelect(){
+  yearSelect.innerHTML='';
+  const c=courses.find(x=>x.id===courseSelect.value)||courses.find(x=>x.id===selectedCourseId);
+  if(!c)return; 
+  c.years.forEach(y=>{const o=document.createElement('option');o.value=y.id;o.textContent=y.name;yearSelect.appendChild(o);});
+  if(!selectedYearId && c.years.length) selectedYearId=c.years[0].id;
+  if(selectedYearId) yearSelect.value=selectedYearId;
+}
+function renderSlotsView(){
+  const courseId = courseSelect.value || selectedCourseId;
+  const yearId = yearSelect.value || selectedYearId;
+  if(!courseId || !yearId){
+    slotsGrid.innerHTML = '<div class="text-sm text-slate-500 dark:text-slate-400">Selecione curso e ano.</div>';
+    return;
+  }
+
+  const raw = localStorage.getItem(scheduleKey(courseId, yearId));
+  let slots = new Array(NUM_SLOTS).fill({hora:'', materia:'', professor:''});
+  if(raw){ 
+    try{
+      const data = JSON.parse(raw);
+      slots = data.slots || slots;
+      slots = slots.map(s => ({hora:s.hora||'', materia:s.materia||'', professor:s.professor||''}));
+    }catch(e){}
+  }
+
+  slotsGrid.innerHTML = '';
+  for(let i=0; i<NUM_SLOTS; i++){
+    const s = slots[i];
+    const card = document.createElement('div');
+    card.className = 'p-4 border-l-4 rounded-lg bg-slate-50 dark:bg-slate-700 slot-card';
+    card.style.borderColor = colorFromText(s.materia || 'Vazio');
+
+    const header = document.createElement('div');
+    header.className = 'flex justify-between mb-2';
+    const label = document.createElement('div');
+    label.className = 'text-sm font-medium';
+    label.textContent = `Horário ${i+1}`;
+    const hint = document.createElement('div');
+    hint.className = 'text-xs text-slate-500 dark:text-slate-400';
+    hint.textContent = s.materia ? `${s.materia} - ${s.professor}` : 'Vazio';
+    header.appendChild(label); header.appendChild(hint);
+
+    const content = document.createElement('div');
+    content.className = 'rounded-md border px-3 py-2 bg-white dark:bg-slate-800 text-sm';
+    content.innerHTML = s.materia ? 
+      `<div><strong>Hora:</strong> ${s.hora}</div>
+       <div><strong>Matéria:</strong> ${s.materia}</div>
+       <div><strong>Professor:</strong> ${s.professor}</div>` : 
+      '<em>Nenhum horário definido</em>';
+
+    card.appendChild(header); card.appendChild(content); slotsGrid.appendChild(card);
+  }
+}
+
+/* ---------------- ADMIN ---------------- */
+function renderAdminCourseSelect(){
+  adminCourseSelect.innerHTML=''; 
+  courses.forEach(c=>{const o=document.createElement('option'); o.value=c.id;o.textContent=c.name;adminCourseSelect.appendChild(o);});
+  if(!adminCourseSelect.value && courses.length) adminCourseSelect.value=courses[0].id;
+  renderAdminYearSelect();
+}
+function renderAdminYearSelect(){
+  adminYearSelect.innerHTML=''; 
+  const c=courses.find(x=>x.id===adminCourseSelect.value); 
+  if(!c)return;
+  c.years.forEach(y=>{const o=document.createElement('option'); o.value=y.id;o.textContent=y.name;adminYearSelect.appendChild(o);});
+  if(!adminYearSelect.value && c.years.length) adminYearSelect.value=c.years[0].id; 
+  renderAdminForm();
+}
+function renderAdminForm(){
+  adminForm.innerHTML='';
+  const courseId=adminCourseSelect.value; 
+  const yearId=adminYearSelect.value;
+  const raw=localStorage.getItem(scheduleKey(courseId,yearId)); 
+  let slots=new Array(NUM_SLOTS).fill({hora:'',materia:'',professor:''});
+  if(raw){ try{slots=JSON.parse(raw).slots||slots;}catch(e){} }
+
+  for(let i=0;i<NUM_SLOTS;i++){
+    const s=slots[i];
+    const c=document.createElement('div'); c.className='p-3 border rounded bg-white dark:bg-slate-700';
+    const lbl=document.createElement('div'); lbl.className='text-sm font-medium mb-2'; lbl.textContent=`Horário ${i+1}`;
+
+    const inputHora=document.createElement('input');
+    inputHora.type='text'; inputHora.placeholder='Hora (ex: 07:30-08:20)';
+    inputHora.className='w-full border rounded px-3 py-2 mb-1 slot-input bg-white dark:bg-slate-800 text-sm';
+    inputHora.value=s.hora; inputHora.dataset.index=i; inputHora.dataset.field='hora';
+
+    const inputMateria=document.createElement('input');
+    inputMateria.type='text'; inputMateria.placeholder='Matéria';
+    inputMateria.className='w-full border rounded px-3 py-2 mb-1 slot-input bg-white dark:bg-slate-800 text-sm';
+    inputMateria.value=s.materia; inputMateria.dataset.index=i; inputMateria.dataset.field='materia';
+
+    const inputProf=document.createElement('input');
+    inputProf.type='text'; inputProf.placeholder='Professor';
+    inputProf.className='w-full border rounded px-3 py-2 slot-input bg-white dark:bg-slate-800 text-sm';
+    inputProf.value=s.professor; inputProf.dataset.index=i; inputProf.dataset.field='professor';
+
+    c.appendChild(lbl); c.appendChild(inputHora); c.appendChild(inputMateria); c.appendChild(inputProf);
+    adminForm.appendChild(c);
+  }
+}
+function saveAdminSlots(){ 
+  const courseId=adminCourseSelect.value; const yearId=adminYearSelect.value;
+  if(!courseId||!yearId){alert('Selecione curso e ano'); return;}
+  const slots=Array.from(adminForm.querySelectorAll('input')).reduce((acc, inp)=>{
+    const i=parseInt(inp.dataset.index); const f=inp.dataset.field;
+    if(!acc[i]) acc[i]={hora:'',materia:'',professor:''};
+    acc[i][f]=inp.value.trim(); return acc;
+  }, new Array(NUM_SLOTS).fill(null));
+  localStorage.setItem(scheduleKey(courseId,yearId),JSON.stringify({updatedAt:new Date().toISOString(),slots}));
+  renderSlotsView(); alert('Horários salvos.');
+}
+function resetAdminSlots(){ 
+  const courseId=adminCourseSelect.value; const yearId=adminYearSelect.value;
+  if(!confirm('Limpar horários?')) return; 
+  localStorage.removeItem(scheduleKey(courseId,yearId));
+  renderAdminForm(); renderSlotsView();
+}
+
+/* ---------------- LOGIN ---------------- */
+enterAdmBtn.addEventListener('click',()=>{ adminUserInput.value=''; adminPassInput.value=''; loginModal.classList.remove('hidden'); loginModal.classList.add('flex'); adminUserInput.focus(); });
+cancelLogin.addEventListener('click',()=>{ loginModal.classList.add('hidden'); loginModal.classList.remove('flex'); });
+confirmLogin.addEventListener('click',()=>{ if(adminUserInput.value===ADMIN_USER && adminPassInput.value===ADMIN_PASS){isAdmin=true; loginModal.classList.add('hidden'); loginModal.classList.remove('flex'); openAdminPanel(); }else{alert('Usuário ou senha incorretos');}});
+function openAdminPanel(){ adminPanel.classList.remove('hidden'); adminPanel.classList.add('flex'); renderAdminCourseSelect(); renderAdminYearSelect(); openAdminPanelBtn.classList.remove('hidden'); }
+closeAdminBtn.addEventListener('click',()=>{ adminPanel.classList.add('hidden'); adminPanel.classList.remove('flex'); isAdmin=false; openAdminPanelBtn.classList.add('hidden'); renderSlotsView(); });
+openAdminPanelBtn.addEventListener('click',()=>{ adminPanel.classList.remove('hidden'); adminPanel.classList.add('flex'); });
+
+/* ---------------- EVENTOS ---------------- */
+courseSelect.addEventListener('change',()=>{ selectedCourseId=courseSelect.value; renderYearSelect(); renderSlotsView(); });
+yearSelect.addEventListener('change',()=>{ selectedYearId=yearSelect.value; renderSlotsView(); });
+refreshBtn.addEventListener('click',renderSlotsView);
+adminCourseSelect.addEventListener('change',renderAdminYearSelect);
+adminYearSelect.addEventListener('change',renderAdminForm);
+saveAdminBtn.addEventListener('click',saveAdminSlots);
+resetAdminBtn.addEventListener('click',resetAdminSlots);
+
+/* ---------------- DARK MODE ---------------- */
+toggleDark.addEventListener('click',()=>{ document.body.classList.toggle('dark'); });
+
+/* ---------------- EXPORTAR IMAGEM ---------------- */
+exportImgBtn.addEventListener('click',()=>{
+  html2canvas(slotsGrid).then(canvas=>{
+    const link=document.createElement('a'); link.href=canvas.toDataURL('image/png'); link.download='horarios.png'; link.click();
+  });
+});
+
+/* ---------------- INICIALIZAÇÃO ---------------- */
+function init(){ loadCoursesMeta(); renderCourseSelect(); renderAdminCourseSelect(); renderSlotsView(); if(courseSelect.options.length) courseSelect.selectedIndex=0; if(yearSelect.options.length) yearSelect.selectedIndex=0;}
+init();
+</script>
